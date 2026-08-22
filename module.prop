@@ -1,6 +1,6 @@
 id=Legion_Y700Gen5_Freq_Unlock
 name=拯救者Y700五代游戏限频解除(野兽/超神/超清视界)
-version=v1
+version=v1.0
 versionCode=260
 author=yutouyes
 description=对野兽模式、chaoshen模式(超神？未发现切换按钮)、超清视界开启后的CPU/GPU频率限制进行解除，平衡模式和省电模式保留原始限频配置不动。解除之后高负载自动跑高频，低负载自动回落，不会锁死某个上限导致掉帧，也不会强行拉高频耗电。不影响温控。
