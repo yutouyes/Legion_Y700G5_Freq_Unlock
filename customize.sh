@@ -4,7 +4,7 @@
 
 # Double-check target file
 if [ -f "$MODPATH/system/etc/gameperfconfig.xml" ]; then
-  ui_print "  customize: OK - system/etc/gameperfconfig.xml present"
+  ui_print "  customize: OK"
   # Explicit 0644 root:root
   chmod 0644 "$MODPATH/system/etc/gameperfconfig.xml"
   chown 0:0 "$MODPATH/system/etc/gameperfconfig.xml"
