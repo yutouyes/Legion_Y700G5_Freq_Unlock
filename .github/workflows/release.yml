@@ -1,0 +1,108 @@
+name: Release Module
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v1.1)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: tag
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Read module metadata
+        id: meta
+        run: |
+          VERSION=$(grep -E '^version=' module.prop | cut -d= -f2-)
+          VERSIONCODE=$(grep -E '^versionCode=' module.prop | cut -d= -f2-)
+          MODID=$(grep -E '^id=' module.prop | cut -d= -f2-)
+          [ -z "$VERSION" ] && VERSION="${{ steps.tag.outputs.tag }}"
+          [ -z "$VERSIONCODE" ] && VERSIONCODE=0
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "versionCode=$VERSIONCODE" >> "$GITHUB_OUTPUT"
+          echo "modid=$MODID" >> "$GITHUB_OUTPUT"
+
+      - name: Build module zip
+        id: zip
+        env:
+          MODID: ${{ steps.meta.outputs.modid }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          ZIP_NAME="${MODID}_${TAG}.zip"
+          # zip the module payload (everything that belongs at zip root)
+          # Excludes repo-only files: .github, .git, .gitignore, update.json, changelog.md, README*, *.zip
+          zip -r9 "$ZIP_NAME" \
+            META-INF \
+            system \
+            customize.sh \
+            module.prop \
+            -x '*.git*' '*.github*' 'update.json' 'changelog.md' 'README*' '*.zip'
+          echo "name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
+          ls -lh "$ZIP_NAME"
+
+      - name: Create GitHub Release
+        id: release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true
+          files: ${{ steps.zip.outputs.name }}
+
+      - name: Compute update.json values
+        id: url
+        run: |
+          REPO="${{ github.repository }}"
+          TAG="${{ steps.tag.outputs.tag }}"
+          ZIP_NAME="${{ steps.zip.outputs.name }}"
+          DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${ZIP_NAME}"
+          CHANGELOG_URL="https://raw.githubusercontent.com/${REPO}/main/changelog.md"
+          echo "zipUrl=$DOWNLOAD_URL" >> "$GITHUB_OUTPUT"
+          echo "changelog=$CHANGELOG_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Update update.json
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          VERSIONCODE: ${{ steps.meta.outputs.versionCode }}
+          ZIPURL: ${{ steps.url.outputs.zipUrl }}
+          CHANGELOG: ${{ steps.url.outputs.changelog }}
+        run: |
+          cat > update.json <<EOF
+          {
+            "version": "${VERSION}",
+            "versionCode": ${VERSIONCODE},
+            "zipUrl": "${ZIPURL}",
+            "changelog": "${CHANGELOG}"
+          }
+          EOF
+          cat update.json
+
+      - name: Commit update.json back to main
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout main
+          git add update.json
+          git commit -m "chore(release): sync ${{ steps.tag.outputs.tag }}" || echo "nothing to commit"
+          git push origin main

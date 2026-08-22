@@ -1,0 +1,127 @@
+#!/system/bin/sh
+##########################################################################################
+# Magisk Module Official Installer Template (minimal, no custom file moving)
+##########################################################################################
+umask 022
+
+# Global vars
+TMPDIR=/dev/tmp
+INSTALLER=$TMPDIR/install
+
+# The following is the standard Magisk contract:
+# OUTFD=$1 (unused), ZIPFILE=$3 (the flashable zip)
+OUTFD=$2
+ZIP=$3
+
+ui_print() {
+  echo -n -e "ui_print $1\n" > /proc/self/fd/$OUTFD
+  echo -n -e "ui_print\n" > /proc/self/fd/$OUTFD
+}
+
+ui_print " "
+ui_print "*******************************"
+ui_print " Lenovo Y700 Gen5 GamePerf     "
+ui_print " SR/FI Freq Unlock MAX v2.0    "
+ui_print "*******************************"
+ui_print " "
+
+# Clean and prepare tmp dirs
+rm -rf "$INSTALLER" 2>/dev/null
+mkdir -p "$INSTALLER" 2>/dev/null
+chmod 755 "$INSTALLER" 2>/dev/null
+
+# Step 1: Extract the entire zip (this keeps directory structure intact)
+ui_print "- Extracting module (keeping paths)"
+unzip -o "$ZIP" -d "$INSTALLER" >&2
+if [ $? -ne 0 ]; then
+  ui_print "! Extraction FAILED"
+  exit 1
+fi
+
+cd "$INSTALLER"
+
+# Step 2: Read module.prop (must be at zip root)
+if [ ! -f module.prop ]; then
+  ui_print "! module.prop NOT FOUND at zip root (invalid module)"
+  exit 1
+fi
+MODID=$(grep -i "^id=" module.prop | head -n 1 | cut -d= -f2-)
+MODNAME=$(grep -i "^name=" module.prop | head -n 1 | cut -d= -f2-)
+MODVER=$(grep -i "^version=" module.prop | head -n 1 | cut -d= -f2-)
+[ -z "$MODID" ] && { ui_print "! MODID empty in module.prop"; exit 1; }
+
+# Boot mode detection
+BOOTMODE=false
+ps | grep zygote | grep -v grep >/dev/null && BOOTMODE=true
+$BOOTMODE || ps -A 2>/dev/null | grep zygote | grep -v grep >/dev/null && BOOTMODE=true
+
+if $BOOTMODE; then
+  MODPATH=/data/adb/modules_update/$MODID
+  rm -rf "$MODPATH" 2>/dev/null
+  mkdir -p "$MODPATH" 2>/dev/null
+else
+  MODPATH=$TMPDIR/system
+  mkdir -p "$MODPATH" 2>/dev/null
+fi
+
+ui_print "- Module ID    : $MODID"
+ui_print "- Module Name  : $MODNAME"
+ui_print "- Version      : $MODVER"
+ui_print "- Install path : $MODPATH"
+ui_print " "
+
+# Step 3: Copy files PRESERVING the original structure
+# CRITICAL FIX: DO NOT move/rewrite the system/ directory hierarchy!
+# Magisk relies on $MODPATH/system/etc/gameperfconfig.xml EXACTLY matching /system/etc/gameperfconfig.xml.
+#   ->  Zip entry "system/etc/gameperfconfig.xml" must live as "$MODPATH/system/etc/gameperfconfig.xml"
+ui_print "- Copying files (keeping directory tree)"
+
+# Copy module.prop to MODPATH root
+[ -f module.prop ] && cp -f module.prop "$MODPATH/module.prop"
+# Copy root scripts (customize.sh, service.sh, post-fs-data.sh, sepolicy.rule, system.prop, etc.)
+for f in customize.sh service.sh post-fs-data.sh sepolicy.rule system.prop; do
+  [ -f "$f" ] && cp -f "$f" "$MODPATH/$f" && chmod 0755 "$MODPATH/$f" 2>/dev/null
+done
+
+# Copy the ENTIRE system/ tree AS-IS (no flattening, no moving, no deleting)
+if [ -d system ]; then
+  cp -af system "$MODPATH/" 2>/dev/null
+  ui_print "  -> system/ directory copied"
+fi
+
+# Step 4: Apply standard permissions
+ui_print "- Setting permissions"
+# Directories -> 0755
+find "$MODPATH" -type d 2>/dev/null | while read d; do chmod 0755 "$d" 2>/dev/null; done
+# Shell scripts -> 0755
+find "$MODPATH" -type f \( -name "*.sh" -o -name "update-binary" \) 2>/dev/null | while read f; do chmod 0755 "$f" 2>/dev/null; done
+# All other files -> 0644 (config files, xml, prop)
+find "$MODPATH" -type f ! -name "*.sh" ! -name "update-binary" 2>/dev/null | while read f; do
+  chmod 0644 "$f" 2>/dev/null
+  chown 0:0 "$f" 2>/dev/null
+done
+
+# Verify the key file exists at the EXACT expected location
+if [ -f "$MODPATH/system/etc/gameperfconfig.xml" ]; then
+  SZ=$(wc -c < "$MODPATH/system/etc/gameperfconfig.xml")
+  ui_print "- VERIFIED: $MODPATH/system/etc/gameperfconfig.xml  (${SZ} bytes)"
+else
+  ui_print "! WARNING: expected file NOT found at $MODPATH/system/etc/gameperfconfig.xml"
+  ui_print "  (this means the zip had wrong internal paths)"
+  find "$MODPATH" -type f -name "*gameperf*" 2>/dev/null | while read bad; do
+    ui_print "  -> Found misplaced file: $bad"
+  done
+fi
+
+# Step 5: Run customize.sh (keeps user-facing checks)
+if [ -f "$MODPATH/customize.sh" ]; then
+  ui_print "- Running customize.sh"
+  . "$MODPATH/customize.sh"
+fi
+
+ui_print " "
+ui_print "- Installation SUCCESS!"
+ui_print "  All Gold/Prime/GPU freqs set to 0_-1 (no cap)"
+ui_print "  Please REBOOT for systemless mount to apply."
+ui_print " "
+exit 0
