@@ -57,7 +57,7 @@ jobs:
             system \
             customize.sh \
             module.prop \
-            -x '*.git*' '*.github*' 'update.json' 'changelog.md' 'README*' '*.zip'
+            -x '*.git*' '*.github*' 'update.json' 'changelog.md' 'README*' '*.zip' '*.sh'
           echo "name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
           ls -lh "$ZIP_NAME"
 
