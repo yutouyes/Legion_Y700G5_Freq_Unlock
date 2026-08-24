@@ -56,7 +56,7 @@ jobs:
             META-INF \
             system \
             customize.sh \
-            service.sh \            
+            service.sh \
             module.prop \
             -x '*.git*' '*.github*' 'update.json' 'changelog.md' 'README*' '*.zip' 
           echo "name=$ZIP_NAME" >> "$GITHUB_OUTPUT"
